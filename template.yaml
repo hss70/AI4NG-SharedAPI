@@ -1,0 +1,58 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Shared API Gateway for AI4NG Services
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, prod]
+
+Resources:
+  # CloudWatch Log Group for API Gateway Access Logs
+  ApiAccessLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/http-api/${AI4NGHttpApi}-access-logs
+      RetentionInDays: 14
+
+  # API Gateway (HTTP API)
+  AI4NGHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      Name: !Sub AI4NG-${Environment}
+      StageName: dev
+      DefaultRouteSettings:
+        DetailedMetricsEnabled: true
+        ThrottlingBurstLimit: 100
+        ThrottlingRateLimit: 50
+      AccessLogSettings:
+        DestinationArn: !GetAtt ApiAccessLogGroup.Arn
+        Format: '{"requestId":"$context.requestId","endpoint":"$context.routeKey","userId":"$context.authorizer.claims.username","ip":"$context.identity.sourceIp","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","status":"$context.status","responseLength":"$context.responseLength","error":"$context.error.message","integrationError":"$context.integration.error"}'
+
+  # Cognito Authorizer
+  AI4NGCognitoAuthorizer:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      ApiId: !Ref AI4NGHttpApi
+      AuthorizerType: JWT
+      IdentitySource:
+        - $request.header.Authorization
+      JwtConfiguration:
+        Audience:
+          - 517s6c84jo5i3lqste5idb0o4c
+        Issuer: https://cognito-idp.eu-west-2.amazonaws.com/eu-west-2_EaNz6cSp0
+      Name: AI4NGCognitoAuthorizer
+
+Outputs:
+  SharedApiId:
+    Value: !Ref AI4NGHttpApi
+    Export:
+      Name: !Sub SharedApiId-${Environment}
+  SharedApiAuthorizerId:
+    Value: !Ref AI4NGCognitoAuthorizer
+    Export:
+      Name: !Sub SharedApiAuthorizerId-${Environment}
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub https://${AI4NGHttpApi}.execute-api.${AWS::Region}.amazonaws.com/dev/
